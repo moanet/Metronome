@@ -1331,6 +1331,14 @@
     padding:24px 12px;
   }
 
+  .sync-status{
+    font-size:11.5px;color:#7b8696;line-height:1.6;
+    min-height:18px;padding:0 2px;word-break:break-all;
+  }
+  .sync-status.ok{color:#6ee7a8}
+  .sync-status.err{color:#f87171}
+  .sync-status.warn{color:#fbbf24}
+
   .edit-modal{max-width:480px}
   .edit-body{padding:6px 18px 6px;overflow-y:auto;flex:1 1 auto}
   .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -1660,6 +1668,7 @@
           <button id="multiBtn" class="mini-btn" title="批量选择">多选</button>
           <button id="ioBtn" class="mini-btn" title="导入 / 导出">导入/导出</button>
           <button id="trashBtn" class="mini-btn" title="回收站">回收站</button>
+         <button id="syncBtn" class="mini-btn" title="云端同步">☁ 同步</button>
           <div class="sort-wrap">
             <button id="sortBtn" class="mini-btn">最近 ▾</button>
             <div class="sort-menu" id="sortMenu"></div>
@@ -1833,6 +1842,37 @@
       <div class="trash-list" id="trashList"></div>
       <div class="io-foot">
         <button class="io-mini" id="trashClearAll">清空回收站</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 云端同步弹窗 -->
+<div class="io-mask" id="syncMask">
+  <div class="io-modal" style="max-width:460px">
+    <div class="io-head">
+      <h2>云端同步</h2>
+      <button class="io-close" id="syncClose" title="关闭">×</button>
+    </div>
+    <div class="io-body" style="display:flex;flex-direction:column;gap:10px">
+      <div class="io-tip">
+        用 GitHub Gist 存曲库，多设备共用同一个 Gist 即同步。<br>
+        首次：填入 Token → 点「推送到云端」自动创建 Gist。<br>
+        其他设备：填同一个 Token + Gist ID → 点「从云端拉取」。<br>
+        Token 只存本机浏览器，不会上传。
+      </div>
+      <div class="edit-field">
+        <label for="syncToken">GitHub Token</label>
+        <input id="syncToken" class="edit-inp" type="password" placeholder="github_pat_xxx 或 ghp_xxx" autocomplete="off">
+      </div>
+      <div class="edit-field">
+        <label for="syncGistId">Gist ID（首次留空，推送自动创建）</label>
+        <input id="syncGistId" class="edit-inp" type="text" placeholder="留空自动创建" autocomplete="off">
+      </div>
+      <div class="sync-status" id="syncStatus"></div>
+      <div class="io-foot">
+        <button class="io-mini" id="syncPull">从云端拉取</button>
+        <button class="io-primary" id="syncPush">推送到云端</button>
       </div>
     </div>
   </div>
@@ -2025,6 +2065,15 @@
   const trashClose  = $('trashClose');
   const trashList   = $('trashList');
   const trashClearAll = $('trashClearAll');
+
+  const syncBtn     = $('syncBtn');
+  const syncMask    = $('syncMask');
+  const syncClose   = $('syncClose');
+  const syncToken   = $('syncToken');
+  const syncGistId  = $('syncGistId');
+  const syncStatus  = $('syncStatus');
+  const syncPull    = $('syncPull');
+  const syncPush    = $('syncPush');
 
   const ioMask      = $('ioMask');
   const ioClose     = $('ioClose');
@@ -4328,6 +4377,147 @@
     saveData();
     renderTrash();
     flash('回收站已清空');
+  });
+
+  /* ===== GitHub Gist 云端同步 ===== */
+  const SYNC_KEY = 'metronome_sync_v1';
+  let syncCfg = { token: '', gistId: '', lastPushAt: 0, lastPullAt: 0 };
+  try {
+    const raw = localStorage.getItem(SYNC_KEY);
+    if (raw) syncCfg = Object.assign(syncCfg, JSON.parse(raw));
+  } catch (e) {}
+
+  function saveSyncCfg() {
+    try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); } catch (e) {}
+  }
+  function setSyncStatus(msg, kind) {
+    syncStatus.textContent = msg || '';
+    syncStatus.className = 'sync-status' + (kind ? ' ' + kind : '');
+  }
+  function openSync() {
+    syncToken.value = syncCfg.token || '';
+    syncGistId.value = syncCfg.gistId || '';
+    const parts = [];
+    if (syncCfg.lastPushAt) parts.push('上次推送 ' + new Date(syncCfg.lastPushAt).toLocaleString());
+    if (syncCfg.lastPullAt) parts.push('上次拉取 ' + new Date(syncCfg.lastPullAt).toLocaleString());
+    setSyncStatus(parts.length ? parts.join(' · ') : '', '');
+    syncMask.classList.add('show');
+  }
+  function closeSync() { syncMask.classList.remove('show'); }
+
+  syncBtn.addEventListener('click', openSync);
+  syncClose.addEventListener('click', closeSync);
+  syncMask.addEventListener('click', function (e) { if (e.target === syncMask) closeSync(); });
+
+  async function ghApi(path, method, body) {
+    const opts = {
+      method: method || 'GET',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': 'Bearer ' + syncCfg.token,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    };
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch('https://api.github.com' + path, opts);
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const j = await res.json();
+        detail = j.message || '';
+      } catch (e) {}
+      throw new Error('HTTP ' + res.status + (detail ? ' · ' + detail : ''));
+    }
+    return res.json();
+  }
+
+  function gatherLibraryData() {
+    let data = null;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) data = JSON.parse(raw);
+    } catch (e) {}
+    if (!data) data = { presets: presets, folders: folders, patterns: patterns, trash: trash };
+    return { schemaVersion: 8, exportedAt: Date.now(), data: data };
+  }
+
+  syncPush.addEventListener('click', async function () {
+    const token = syncToken.value.trim();
+    const gistId = syncGistId.value.trim();
+    if (!token) { setSyncStatus('请先填入 GitHub Token', 'err'); return; }
+    syncCfg.token = token;
+    if (gistId) syncCfg.gistId = gistId;
+
+    const payload = gatherLibraryData();
+    const body = {
+      description: '节拍器曲库备份',
+      public: false,
+      files: {
+        'metronome-library.json': { content: JSON.stringify(payload, null, 2) }
+      }
+    };
+
+    setSyncStatus('推送中…', 'warn');
+    syncPush.disabled = true; syncPull.disabled = true;
+    try {
+      if (syncCfg.gistId) {
+        await ghApi('/gists/' + syncCfg.gistId, 'PATCH', body);
+      } else {
+        const created = await ghApi('/gists', 'POST', body);
+        syncCfg.gistId = created.id;
+        syncGistId.value = created.id;
+      }
+      syncCfg.lastPushAt = Date.now();
+      saveSyncCfg();
+      setSyncStatus('✅ 推送成功 · Gist ID: ' + syncCfg.gistId, 'ok');
+    } catch (err) {
+      setSyncStatus('❌ 推送失败：' + err.message, 'err');
+    } finally {
+      syncPush.disabled = false; syncPull.disabled = false;
+    }
+  });
+
+  syncPull.addEventListener('click', async function () {
+    const token = syncToken.value.trim();
+    const gistId = syncGistId.value.trim();
+    if (!token) { setSyncStatus('请先填入 GitHub Token', 'err'); return; }
+    if (!gistId) { setSyncStatus('请填入 Gist ID（首次请用「推送到云端」创建）', 'err'); return; }
+    if (!window.confirm('将用云端数据覆盖本机曲库，确定继续？')) return;
+
+    syncCfg.token = token;
+    syncCfg.gistId = gistId;
+    setSyncStatus('拉取中…', 'warn');
+    syncPush.disabled = true; syncPull.disabled = true;
+    try {
+      const gist = await ghApi('/gists/' + gistId);
+      const file = gist.files && gist.files['metronome-library.json'];
+      if (!file) throw new Error('Gist 中找不到 metronome-library.json');
+      let content = file.content;
+      if (file.truncated) {
+        const r = await fetch(file.raw_url, {
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.github.raw'
+          }
+        });
+        if (!r.ok) throw new Error('拉取 raw 失败 HTTP ' + r.status);
+        content = await r.text();
+      }
+      const parsed = JSON.parse(content);
+      if (!parsed || !parsed.data) throw new Error('文件格式不正确');
+      localStorage.setItem(LS_KEY, JSON.stringify(parsed.data));
+      syncCfg.lastPullAt = Date.now();
+      saveSyncCfg();
+      setSyncStatus('✅ 拉取成功，正在刷新…', 'ok');
+      setTimeout(function () { location.reload(); }, 500);
+    } catch (err) {
+      setSyncStatus('❌ 拉取失败：' + err.message, 'err');
+    } finally {
+      syncPush.disabled = false; syncPull.disabled = false;
+    }
   });
 
   function sortList(list, mode) {
