@@ -58,6 +58,12 @@
     transition:max-width .3s;
   }
   
+  /* 修复 iPad 竖屏时两侧的巨大黑边 */
+  @media (min-width: 521px) and (max-width: 899px) {
+    .app {
+      max-width: 100%;
+    } 
+  
   .track{
     display:flex;width:100%;height:100%;
     overflow-x:auto;overflow-y:hidden;
