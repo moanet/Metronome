@@ -6846,13 +6846,25 @@
     if (!document.hidden && queue.length > 0) queue.length = 0;
   });
 
+  let wasWideLayout = isWideLayout(); // 记录之前的屏幕状态
+
   window.addEventListener('resize', function () {
     adjustBottomLayout();
-    if (!isWideLayout()) {
-      const idx = currentViewIdx();
-      const w = track.clientWidth;
-      if (w > 0 && idx >= 0) track.scrollLeft = w * idx;
+    const nowWide = isWideLayout();
+    
+    if (!nowWide) {
+      if (wasWideLayout) {
+        // 刚从横屏切回竖屏：强制回到中间的节拍器视图 (VIEW_MAIN)
+        const w = track.clientWidth;
+        if (w > 0) track.scrollLeft = w * VIEW_MAIN;
+      } else {
+        // 正常的竖屏窗口缩放：保持当前视图
+        const idx = currentViewIdx();
+        const w = track.clientWidth;
+        if (w > 0 && idx >= 0) track.scrollLeft = w * idx;
+      }
     }
+    wasWideLayout = nowWide;
   });
 
   window.addEventListener('beforeinstallprompt', function (e) {
