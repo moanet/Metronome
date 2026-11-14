@@ -1,5 +1,8 @@
 # 🥁 节拍器 · Metronome
 
+> **在线使用地址**：[https://moanet.github.io/Metronome/](https://moanet.github.io/Metronome/)
+> *(建议使用手机或电脑 Chrome/Edge 浏览器打开，并在菜单中「添加到主屏幕」以获取最佳体验)*
+
 一个单文件、零依赖、可离线使用的专业网页节拍器。支持 PWA 安装、多版本 BPM 管理、本地音频分析以及基于 GitHub Gist 的云端同步。
 
 ## ✨ 核心特性
@@ -36,6 +39,11 @@
 
 ## 🚀 快速开始
 
+### 在线使用
+直接在浏览器中访问：[https://moanet.github.io/Metronome/](https://moanet.github.io/Metronome/)
+- 手机端：通过浏览器菜单选择「添加到主屏幕」。
+- 电脑端：点击地址栏右侧的「安装」图标，即可作为独立桌面应用运行。
+
 ### 本地运行
 由于项目是纯单文件（包含 CSS 和 JS），你可以直接：
 1. 下载 `index.html`。
@@ -43,11 +51,10 @@
 
 *(注：如果要在本地体验 PWA 或离线缓存功能，建议使用本地服务器运行，如 `npx serve` 或 VS Code 的 Live Server)*
 
-### 部署到 GitHub Pages
+### 部署到自己的 GitHub Pages
 1. Fork 或 Clone 本仓库。
 2. 在仓库的 **Settings -> Pages** 中，将 Source 设置为 `main` 分支的 `/root` 目录。
 3. 等待几分钟，访问 `https://你的用户名.github.io/仓库名/` 即可。
-4. 在手机浏览器中打开该网址，点击菜单中的「添加到主屏幕」即可安装为 App。
 
 ## ☁️ 云端同步配置指南
 1. 前往 GitHub 的 [Developer Settings -> Tokens (classic)](https://github.com/settings/tokens) 生成一个新 Token，勾选 **`gist`** 权限。
